@@ -1,0 +1,96 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Recode</title>
+    <script src="https://unpkg.com/htmx.org@1.9.8" integrity="sha384-rgjA7mptc2ETQqXoYC3/zJvkU7K/aP44Y+z7xQuJiVnB/422P/Ak+F/AqFR7E4Wr" crossorigin="anonymous"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        #forms {
+            display: flex;
+            flex-flow: column;
+            width: min(400px, 75%);
+            gap: 30px;
+        }
+
+        section {
+            width: 75%;
+            display: flex;
+            margin: 10px;
+            position: relative;
+        }
+
+        fieldset {
+            width: 100%;
+        }
+
+        select {
+            width: 100%;
+        }
+
+        form button  {
+            padding: 5px;
+            margin-top: 10px;
+        }
+    </style>
+
+    <script type="text/javascript">
+
+    </script>
+</head>
+
+<body>
+    <div class="forms">
+        <h1>Recode</h1>
+        <section>
+            <form hx-trigger="load" hx-get="/anime" hx-target="select#newepisodelist">
+                <fieldset>
+                    <legend>New Episode</legend>
+                    <input id="rootdirectory" name="rootdirectory" type="text" placeholder="Root Directory"
+                        hx-trigger="load" hx-post="/rootdirectory" hx-swap="outerHTML" hx-target="this" />
+                    <select name="newepisode" id="newepisodelist" />
+                    <input type="file" name="video" />
+                    <input type="number" placeholder="Season" name="season" />
+                    <input type="number" placeholder="Episode" name="episode" />
+                </fieldset>
+
+                <button hx-trigger="click" hx-post="/newepisode" hx-encoding="multipart/form-data" hx-swap="none">Add New Episode</button>
+            </form>
+        </section>
+
+        <section>
+            <form hx-trigger="load" hx-get="/anime" hx-target="select#nextepisodelist">
+                <fieldset>
+                    <legend>Next Episode</legend>
+                    <select name="nextepisode" id="nextepisodelist" />
+                    </select>
+                </fieldset>
+
+                <button>Add Next Episode</button>
+            </form>
+        </section>
+
+        <section>
+            <form hx-trigger="load" hx-get="/anime" hx-target="select#addshowlist">
+                <fieldset>
+                    <legend>Add Show</legend>
+                    <select name="addshow" id="addshowlist" />
+                    </select>
+                </fieldset>
+
+                <button>Add Next Episode</button>
+            </form>
+        </section>
+    </div>
+    <div class="encoding">
+
+    </div>
+    <div class="queue" hx-trigger="load" hx-get="/queue" hx-target="ul">
+        <h1>Encoding Queue</h1>
+        <ul></ul>
+    </div>
+</body>
+</html>
