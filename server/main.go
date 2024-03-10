@@ -1,15 +1,15 @@
 package main
 
 import (
-	"database/sql"
-	"fmt"
-	"log"
-	"net/http"
-	"os"
-	"strings"
-	"text/template"
+    "database/sql"
+    "fmt"
+    "mentegee/recode/gui/xerr"
+    "net/http"
+    "os"
+    "strings"
+    "text/template"
 
-	_ "modernc.org/sqlite"
+    _ "modernc.org/sqlite"
 )
 
 type Anime struct{
@@ -38,18 +38,12 @@ func (r *Recode) getSeason() string {
     return str[len(str) - 2:]
 }
 
-func check(err error) {
-    if err != nil {
-        log.Fatal(err)
-    }
-}
-
 func getQueue(db *sql.DB) <- chan Recode {
-    rows, err := db.Query("select origin, dest, season, episode from recodes")
-    check(err)
+    rows, err := db.Query("SELECT origin, dest, season, episode FROM recodes WHERE processed = 0")
+    xerr.LErr(err)
 
     out := make(chan Recode)
-    
+
     go func() {
         for rows.Next() {
             var origin string
@@ -58,7 +52,7 @@ func getQueue(db *sql.DB) <- chan Recode {
             var episode string
 
             err := rows.Scan(&origin, &dest, &season, &episode)
-            check(err)      
+            xerr.LErr(err)
 
             out <- Recode {Origin: origin, Destination: dest, Season: season, Episode: episode }
         }
@@ -71,17 +65,17 @@ func getQueue(db *sql.DB) <- chan Recode {
 }
 
 func getRoot(db *sql.DB) <- chan string {
-    rows, err := db.Query("select rootdir from prefs")
-    check(err)
+    rows, err := db.Query("SELECT rootdir FRON prefs")
+    xerr.LErr(err)
 
     out := make(chan string)
-    
+
     go func() {
         for rows.Next() {
             var rootdir string
 
             err := rows.Scan(&rootdir)
-            check(err)      
+            xerr.LErr(err)
 
             out <- rootdir
         }
@@ -95,24 +89,27 @@ func getRoot(db *sql.DB) <- chan string {
 
 func main () {
     db, err := sql.Open("sqlite", "recode.db")
-    check(err)
+    xerr.LErr(err)
     defer db.Close()
 
-    sql := `create table if not exists recodes (
-        id INT PRIMARY KEY,
-        origin TEXT NOT NULL,
-        dest TEXT NOT NULL,
-        season TEXT NOT NULL,
-        episode TEXT NOT NULL
+    sql := `CREATE TABLE IF NOT EXISTS recodes (
+    id INT PRIMARY KEY,
+    origin TEXT NOT NULL,
+    dest TEXT NOT NULL,
+    season TEXT NOT NULL,
+    episode TEXT NOT NULL,
+    processed BOOLEAN NOT NULL DEFAULT(0),
+    createdAt INTEGER NOT NULL DEFAULT(unixepoch(CURRENT_TIMESTAMP)),
+    updatedAt INTEGER NOT NULL DEFAULT(unixepoch(CURRENT_TIMESTAMP))
     );
 
-    create table if not exists prefs (
-        id INT PRIMARY KEY CHECK (id = 1),
-        rootdir TEXT
+    CREATE TABLE IF NOT EXISTS prefs (
+    id INT PRIMARY KEY CHECK (id = 1),
+    rootdir TEXT
     )`
 
     _, err = db.Exec(sql)
-    check(err)
+    xerr.LErr(err)
 
     mux := http.NewServeMux()
     files := http.FileServer(http.Dir("../src/static"))
@@ -133,8 +130,8 @@ func main () {
         episode := req.PostFormValue("episode")
         season := req.PostFormValue("season")
         _, video, err := req.FormFile("video")
-        
-        check(err)
+
+        xerr.LErr(err)
 
         recode := Recode{ Season: season , Episode: episode }
 
@@ -144,7 +141,7 @@ func main () {
     mux.HandleFunc("GET /anime", func(res http.ResponseWriter, req *http.Request) {
         dir := "/Volumes/media/Anime TV"
         entries, err := os.ReadDir(dir)
-        check(err)
+        xerr.LErr(err)
 
         list := make([]Anime, len(entries))
 
@@ -156,7 +153,7 @@ func main () {
 
         tmpl, err := template.New("animelist").Parse(animeTmpl)
         err = tmpl.Execute(res, list)
-        check(err)
+        xerr.LErr(err)
     })
 
     mux.HandleFunc("GET /queue", func(res http.ResponseWriter, req *http.Request) {
@@ -167,34 +164,39 @@ func main () {
             list = append(list, recode)
         }
 
-            tmpl, err := template.New("queue").Parse(queueTmpl)
-            check(err)
-            check(tmpl.Execute(res, list))
+        tmpl, err := template.New("queue").Parse(queueTmpl)
+        xerr.LErr(err)
+        xerr.LErr(tmpl.Execute(res, list))
 
     })
 
     mux.HandleFunc("POST /rootdirectory", func(res http.ResponseWriter, req *http.Request) {
         dir := req.PostFormValue("rootdirectory")
 
-        if rootdir == "" || dir == "" {
+        fmt.Printf(dir)
+
+        if rootdir == "" {
             in := getRoot(db) 
 
             rootdir = <- in
-        } else {
+        }
+
+        if dir != "" {
             query, err := db.Prepare("insert into prefs (id, rootdir) values (?, ?) on conflict (id) do update set rootdir = excluded.rootdir")
-            check(err)
+            xerr.LErr(err)
 
             _, err = query.Exec(1, dir)
-            check(err)
+            xerr.LErr(err)
 
             rootdir = dir
         }
 
+        fmt.Println(rootdir)
         tmpl, err := template.New("rootdir").Parse(rootTmpl)
-        check(err)
+        xerr.LErr(err)
 
         err = tmpl.Execute(res, rootdir)
-        check(err)
+        xerr.LErr(err)
     })
 
     http.ListenAndServe(":3000", mux)
