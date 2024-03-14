@@ -65,7 +65,7 @@ func getQueue(db *sql.DB) <- chan Recode {
 }
 
 func getRoot(db *sql.DB) <- chan string {
-    rows, err := db.Query("SELECT rootdir FRON prefs")
+    rows, err := db.Query("SELECT rootdir FROM prefs")
     xerr.LErr(err)
 
     out := make(chan string)
@@ -126,7 +126,7 @@ func main () {
     })
 
     mux.HandleFunc("POST /newepisode", func(res http.ResponseWriter, req *http.Request) {
-        destination := req.PostFormValue("showPath")
+        destination := req.PostFormValue("newepisode")
         episode := req.PostFormValue("episode")
         season := req.PostFormValue("season")
         _, video, err := req.FormFile("video")
@@ -134,6 +134,16 @@ func main () {
         xerr.LErr(err)
 
         recode := Recode{ Season: season , Episode: episode }
+
+        query, err := db.Prepare("INSERT INTO recodes (season, episode, dest, origin) VALUES (?, ?, ?, ?)")
+        xerr.LErr(err)
+
+        splitText := strings.Split(destination, "/")
+        destName := splitText[len(splitText) - 1]
+        dest := fmt.Sprintf("%v/%v - s%ve%v.mkv", destination, destName, recode.getSeason(), recode.getEpisode())
+        origin := fmt.Sprintf("%v/%v", rootdir, video.Filename)
+        _, err = query.Exec(season, episode, dest, origin)
+        xerr.LErr(err)
 
         fmt.Fprintf(res, fmt.Sprintf("%v %v %v %v", destination, recode.getEpisode(), video.Filename, recode.getSeason()))
     })
@@ -182,7 +192,7 @@ func main () {
         }
 
         if dir != "" {
-            query, err := db.Prepare("insert into prefs (id, rootdir) values (?, ?) on conflict (id) do update set rootdir = excluded.rootdir")
+            query, err := db.Prepare("INSERT INTO prefs (id, rootdir) VALUES (?, ?) ON CONFLICT (id) DO UPDATE SET rootdir = excluded.rootdir")
             xerr.LErr(err)
 
             _, err = query.Exec(1, dir)
