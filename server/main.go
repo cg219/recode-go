@@ -1,27 +1,27 @@
 package main
 
 import (
-    "database/sql"
-    "fmt"
-    "mentegee/recode/gui/xerr"
-    "net/http"
-    "os"
-    "strings"
-    "text/template"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"mentegee/recode/gui/xerr"
+	"net/http"
+	"os"
+	"strings"
 
-    _ "modernc.org/sqlite"
+	_ "modernc.org/sqlite"
 )
 
 type Anime struct{
-    Name string
-    Path string
+    Name string `json:"name"`
+    Path string `json:"path"`
 }
 
 type Recode struct {
-    Origin string
-    Destination string
-    Season string 
-    Episode string
+    Origin string `json:"origin"`
+    Destination string `json:"destination"`
+    Season string `json:"season"`
+    Episode string `json:"episode"`
 }
 
 func (r *Recode) getEpisode() string {
@@ -113,12 +113,11 @@ func main () {
 
     mux := http.NewServeMux()
     files := http.FileServer(http.Dir("../src/static"))
-    animeTmpl := `{{range .}}<option value="{{.Path}}">{{.Name}}</option>{{end}}` 
-    queueTmpl := `{{range .}}<li>{{.Episode}} - {{.Season}}</li>{{end}}` 
-    rootTmpl := `<input id="rootdirectory" name="rootdirectory" type="text" value="{{.}}" placeholder="Root Directory" hx-trigger="keyup changed delay:500ms" hx-post="/rootdirectory" hx-swap="outerHTML" hx-target="this" />`
+    jsfiles := http.FileServer(http.Dir("../src/client/js"))
     var rootdir string
 
     mux.Handle("/f/", http.StripPrefix("/f/", files))
+    mux.Handle("/js/", http.StripPrefix("/js/", jsfiles))
 
     mux.HandleFunc("/", func(res http.ResponseWriter, req *http.Request) {
         fmt.Println("GET /")
@@ -161,9 +160,10 @@ func main () {
             }
         }
 
-        tmpl, err := template.New("animelist").Parse(animeTmpl)
-        err = tmpl.Execute(res, list)
-        xerr.LErr(err)
+        data, err := json.Marshal(list)
+        xerr.PErr(err)
+        res.Header().Set("Content-Type", "application/json")        
+        res.Write(data)
     })
 
     mux.HandleFunc("GET /queue", func(res http.ResponseWriter, req *http.Request) {
@@ -174,10 +174,11 @@ func main () {
             list = append(list, recode)
         }
 
-        tmpl, err := template.New("queue").Parse(queueTmpl)
+        data, err := json.Marshal(list)
         xerr.LErr(err)
-        xerr.LErr(tmpl.Execute(res, list))
 
+        res.Header().Set("Content-Type", "application/json")
+        res.Write(data)
     })
 
     mux.HandleFunc("POST /rootdirectory", func(res http.ResponseWriter, req *http.Request) {
@@ -202,11 +203,9 @@ func main () {
         }
 
         fmt.Println(rootdir)
-        tmpl, err := template.New("rootdir").Parse(rootTmpl)
-        xerr.LErr(err)
 
-        err = tmpl.Execute(res, rootdir)
-        xerr.LErr(err)
+        res.Header().Set("Content-Type", "text/plain")
+        res.Write([]byte(fmt.Sprintf("%v", rootdir)))
     })
 
     http.ListenAndServe(":3000", mux)
