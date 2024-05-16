@@ -1,16 +1,22 @@
 package main
 
 import (
+	"context"
 	"database/sql"
-	"encoding/json"
-	"fmt"
+	"log"
 	"mentegee/recode/gui/xerr"
 	"net/http"
-	"os"
 	"strings"
+	"sync"
+    _ "embed"
+
+	rc "mentegee/recode/gui/recode"
 
 	_ "modernc.org/sqlite"
 )
+
+//go:embed schema.sql
+var ddl string
 
 type Anime struct{
     Name string `json:"name"`
@@ -38,175 +44,48 @@ func (r *Recode) getSeason() string {
     return str[len(str) - 2:]
 }
 
-func getQueue(db *sql.DB) <- chan Recode {
-    rows, err := db.Query("SELECT origin, dest, season, episode FROM recodes WHERE processed = 0")
-    xerr.LErr(err)
-
-    out := make(chan Recode)
-
-    go func() {
-        for rows.Next() {
-            var origin string
-            var dest string
-            var season string
-            var episode string
-
-            err := rows.Scan(&origin, &dest, &season, &episode)
-            xerr.LErr(err)
-
-            out <- Recode {Origin: origin, Destination: dest, Season: season, Episode: episode }
-        }
-
-        rows.Close()
-        close(out)
-    }()
-
-    return out
+type server struct {
+    queries *rc.Queries
+    mux *http.ServeMux
+    rootdir string
+    logger *log.Logger
+    mtx *sync.RWMutex
 }
 
-func getRoot(db *sql.DB) <- chan string {
-    rows, err := db.Query("SELECT rootdir FROM prefs")
-    xerr.LErr(err)
+func NewServer(db *sql.DB) *server {
+    q := rc.New(db)
 
-    out := make(chan string)
+    return &server{
+        queries: q,
+        mux: http.NewServeMux(),
+        logger: log.Default(),
+        mtx: &sync.RWMutex{},
+    }
+}
 
-    go func() {
-        for rows.Next() {
-            var rootdir string
 
-            err := rows.Scan(&rootdir)
-            xerr.LErr(err)
+func run() error {
+    ctx := context.Background()
+    db, err := sql.Open("sqlite", "recode.db")
+    if err != nil {
+        return err
+    }
+    defer db.Close()
 
-            out <- rootdir
-        }
+    if _, err := db.ExecContext(ctx, ddl); err != nil {
+        return err
+    }
 
-        rows.Close()
-        close(out)
-    }()
+    srv := NewServer(db)
 
-    return out
+    addRoutes(srv)
+    
+    http.ListenAndServe(":3000", srv.mux)
+    return nil
 }
 
 func main () {
-    db, err := sql.Open("sqlite", "recode.db")
-    xerr.LErr(err)
-    defer db.Close()
-
-    sql := `CREATE TABLE IF NOT EXISTS recodes (
-    id INT PRIMARY KEY,
-    origin TEXT NOT NULL,
-    dest TEXT NOT NULL,
-    season TEXT NOT NULL,
-    episode TEXT NOT NULL,
-    processed BOOLEAN NOT NULL DEFAULT(0),
-    createdAt INTEGER NOT NULL DEFAULT(unixepoch(CURRENT_TIMESTAMP)),
-    updatedAt INTEGER NOT NULL DEFAULT(unixepoch(CURRENT_TIMESTAMP))
-    );
-
-    CREATE TABLE IF NOT EXISTS prefs (
-    id INT PRIMARY KEY CHECK (id = 1),
-    rootdir TEXT
-    )`
-
-    _, err = db.Exec(sql)
-    xerr.LErr(err)
-
-    mux := http.NewServeMux()
-    files := http.FileServer(http.Dir("../src/static"))
-    jsfiles := http.FileServer(http.Dir("../src/client/js"))
-    var rootdir string
-
-    mux.Handle("/f/", http.StripPrefix("/f/", files))
-    mux.Handle("/js/", http.StripPrefix("/js/", jsfiles))
-
-    mux.HandleFunc("/", func(res http.ResponseWriter, req *http.Request) {
-        fmt.Println("GET /")
-        http.ServeFile(res, req, "../src/client/index.html")
-    })
-
-    mux.HandleFunc("POST /newepisode", func(res http.ResponseWriter, req *http.Request) {
-        destination := req.PostFormValue("newepisode")
-        episode := req.PostFormValue("episode")
-        season := req.PostFormValue("season")
-        _, video, err := req.FormFile("video")
-
+    if err := run(); err != nil {
         xerr.LErr(err)
-
-        recode := Recode{ Season: season , Episode: episode }
-
-        query, err := db.Prepare("INSERT INTO recodes (season, episode, dest, origin) VALUES (?, ?, ?, ?)")
-        xerr.LErr(err)
-
-        splitText := strings.Split(destination, "/")
-        destName := splitText[len(splitText) - 1]
-        dest := fmt.Sprintf("%v/%v - s%ve%v.mkv", destination, destName, recode.getSeason(), recode.getEpisode())
-        origin := fmt.Sprintf("%v/%v", rootdir, video.Filename)
-        _, err = query.Exec(season, episode, dest, origin)
-        xerr.LErr(err)
-
-        fmt.Fprintf(res, fmt.Sprintf("%v %v %v %v", destination, recode.getEpisode(), video.Filename, recode.getSeason()))
-    })
-
-    mux.HandleFunc("GET /anime", func(res http.ResponseWriter, req *http.Request) {
-        dir := "/Volumes/media/Anime TV"
-        entries, err := os.ReadDir(dir)
-        xerr.LErr(err)
-
-        list := make([]Anime, len(entries))
-
-        for i, entry := range entries {
-            if entry.IsDir() {
-                list[i] = Anime { Name: entry.Name(), Path: dir + "/" + entry.Name() } 
-            }
-        }
-
-        data, err := json.Marshal(list)
-        xerr.PErr(err)
-        res.Header().Set("Content-Type", "application/json")        
-        res.Write(data)
-    })
-
-    mux.HandleFunc("GET /queue", func(res http.ResponseWriter, req *http.Request) {
-        recodes := getQueue(db)
-        list := []Recode{} 
-
-        for recode := range recodes {
-            list = append(list, recode)
-        }
-
-        data, err := json.Marshal(list)
-        xerr.LErr(err)
-
-        res.Header().Set("Content-Type", "application/json")
-        res.Write(data)
-    })
-
-    mux.HandleFunc("POST /rootdirectory", func(res http.ResponseWriter, req *http.Request) {
-        dir := req.PostFormValue("rootdirectory")
-
-        fmt.Printf(dir)
-
-        if rootdir == "" {
-            in := getRoot(db) 
-
-            rootdir = <- in
-        }
-
-        if dir != "" {
-            query, err := db.Prepare("INSERT INTO prefs (id, rootdir) VALUES (?, ?) ON CONFLICT (id) DO UPDATE SET rootdir = excluded.rootdir")
-            xerr.LErr(err)
-
-            _, err = query.Exec(1, dir)
-            xerr.LErr(err)
-
-            rootdir = dir
-        }
-
-        fmt.Println(rootdir)
-
-        res.Header().Set("Content-Type", "text/plain")
-        res.Write([]byte(fmt.Sprintf("%v", rootdir)))
-    })
-
-    http.ListenAndServe(":3000", mux)
+    }
 }
