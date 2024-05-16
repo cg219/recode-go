@@ -1,14 +1,14 @@
-package xerr
+package main
 
 import "log"
 
-func PErr(err error) {
+func printErr(err error) {
     if err != nil {
         panic(err)
     }
 }
 
-func LErr(err error) {
+func logErr(err error) {
     if err != nil {
         log.Fatal(err)
     }

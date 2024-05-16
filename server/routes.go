@@ -1,17 +1,16 @@
 package main
 
 import (
-	"context"
-	"database/sql"
-	"encoding/json"
-	"fmt"
-	"log"
-	rc "mentegee/recode/gui/recode"
-	"mentegee/recode/gui/xerr"
-	"net/http"
-	"os"
-	"strings"
-	"sync"
+    "context"
+    "database/sql"
+    "encoding/json"
+    "fmt"
+    "log"
+    rc "mentegee/recode/gui/recode"
+    "net/http"
+    "os"
+    "strings"
+    "sync"
 )
 
 func addRoutes(srv *server) {
@@ -27,7 +26,7 @@ func addRoutes(srv *server) {
 func getQueue(query rc.Queries) <- chan Recode {
     ctx := context.Background()
     rows, err := query.GetQueue(ctx)
-    xerr.LErr(err)
+    logErr(err)
 
     out := make(chan Recode)
 
@@ -44,7 +43,7 @@ func getQueue(query rc.Queries) <- chan Recode {
 func getRoot(query rc.Queries) <- chan string {
     ctx := context.Background()
     rootdir, err := query.GetPrefs(ctx)
-    xerr.LErr(err)
+    logErr(err)
 
     out := make(chan string)
 
@@ -72,7 +71,7 @@ func handleNewEpisode(query rc.Queries, rootdir *string, mtx *sync.RWMutex) http
         season := r.PostFormValue("season")
         _, video, err := r.FormFile("video")
 
-        xerr.LErr(err)
+        logErr(err)
 
         recode := Recode{ Season: season , Episode: episode }
 
@@ -94,7 +93,7 @@ func handleNewEpisode(query rc.Queries, rootdir *string, mtx *sync.RWMutex) http
             Origin: origin,
         })
 
-        xerr.LErr(err)
+        logErr(err)
 
         fmt.Fprintf(w, fmt.Sprintf("%v %v %v %v", destination, recode.getEpisode(), video.Filename, recode.getSeason()))
 
@@ -105,7 +104,7 @@ func handleAnime() http.HandlerFunc {
     return func(w http.ResponseWriter, _ *http.Request) {
         dir := "/Volumes/media/Anime TV"
         entries, err := os.ReadDir(dir)
-        xerr.LErr(err)
+        logErr(err)
 
         list := make([]Anime, len(entries))
 
@@ -116,7 +115,7 @@ func handleAnime() http.HandlerFunc {
         }
 
         data, err := json.Marshal(list)
-        xerr.PErr(err)
+        printErr(err)
         w.Header().Set("Content-Type", "application/json")        
         w.Write(data)
     }
@@ -132,7 +131,7 @@ func handleQueue(query rc.Queries) http.HandlerFunc {
         }
 
         data, err := json.Marshal(list)
-        xerr.LErr(err)
+        logErr(err)
 
         w.Header().Set("Content-Type", "application/json")
         w.Write(data)
@@ -161,7 +160,7 @@ func handleRootDir(logger *log.Logger, query rc.Queries, rootdir *string, mtx *s
             ctx := context.Background()
             err := query.UpdatePref(ctx, rc.UpdatePrefParams{ Rootdir: sql.NullString{ String: dir, Valid: true } })
 
-            xerr.LErr(err)
+            logErr(err)
 
             mtx.Lock()
             *rootdir = dir

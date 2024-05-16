@@ -1,18 +1,17 @@
 package main
 
 import (
-	"context"
-	"database/sql"
-	"log"
-	"mentegee/recode/gui/xerr"
-	"net/http"
-	"strings"
-	"sync"
+    "context"
+    "database/sql"
+    "log"
+    "net/http"
+    "strings"
+    "sync"
     _ "embed"
 
-	rc "mentegee/recode/gui/recode"
+    rc "mentegee/recode/gui/recode"
 
-	_ "modernc.org/sqlite"
+    _ "modernc.org/sqlite"
 )
 
 //go:embed schema.sql
@@ -79,13 +78,13 @@ func run() error {
     srv := NewServer(db)
 
     addRoutes(srv)
-    
+
     http.ListenAndServe(":3000", srv.mux)
     return nil
 }
 
 func main () {
     if err := run(); err != nil {
-        xerr.LErr(err)
+        logErr(err)
     }
 }
