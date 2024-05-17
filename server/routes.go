@@ -95,7 +95,7 @@ func handleNewEpisode(query rc.Queries, rootdir *string, mtx *sync.RWMutex) http
 
         logErr(err)
 
-        fmt.Fprintf(w, fmt.Sprintf("%v %v %v %v", destination, recode.getEpisode(), video.Filename, recode.getSeason()))
+        fmt.Fprintf(w, fmt.Sprintf("%v %v %v %v", destination, recode.getEpisode(), video.Filename, recode.getSeason()), nil)
 
     }
 }
@@ -171,7 +171,7 @@ func handleRootDir(logger *log.Logger, query rc.Queries, rootdir *string, mtx *s
         logger.Println(*rootdir)
 
         w.Header().Set("Content-Type", "text/plain")
-        w.Write([]byte(fmt.Sprintf("%v", &rootdir)))
+        w.Write([]byte(fmt.Sprintf("%v", *rootdir)))
         mtx.RUnlock()
     }
 }
