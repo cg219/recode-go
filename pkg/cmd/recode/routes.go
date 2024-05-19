@@ -1,21 +1,42 @@
-package main
+package recode
 
 import (
-    "context"
-    "database/sql"
-    "encoding/json"
-    "fmt"
-    "log"
-    rc "mentegee/recode/gui/recode"
-    "net/http"
-    "os"
-    "strings"
-    "sync"
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"log"
+	"mentegee/recode/pkg/cmd"
+	"mentegee/recode/pkg/mq"
+	"net/http"
+	"os"
+	"strings"
+	"sync"
 )
 
+type Anime struct{
+    Name string `json:"name"`
+    Path string `json:"path"`
+}
+
+type Recode struct {
+    Origin string `json:"origin"`
+    Destination string `json:"destination"`
+    Season string `json:"season"`
+    Episode string `json:"episode"`
+}
+
+type server struct {
+    queries *mq.Queries
+    mux *http.ServeMux
+    rootdir string
+    logger *log.Logger
+    mtx *sync.RWMutex
+}
+
 func addRoutes(srv *server) {
-    srv.mux.Handle("/f/", http.StripPrefix("/f/", http.FileServer(http.Dir("../src/static"))))
-    srv.mux.Handle("/js/", http.StripPrefix("/js/", http.FileServer(http.Dir("../src/client/js"))))
+    srv.mux.Handle("/f/", http.StripPrefix("/f/", http.FileServer(http.Dir("../../web/static"))))
+    srv.mux.Handle("/js/", http.StripPrefix("/js/", http.FileServer(http.Dir("../../web/ui/js"))))
     srv.mux.HandleFunc("/", handleIndex())
     srv.mux.HandleFunc("POST /newepisode", handleNewEpisode(*srv.queries, &srv.rootdir, srv.mtx))
     srv.mux.HandleFunc("GET /anime", handleAnime())
@@ -23,10 +44,10 @@ func addRoutes(srv *server) {
     srv.mux.HandleFunc("POST /rootdirectory", handleRootDir(srv.logger, *srv.queries, &srv.rootdir, srv.mtx))
 }
 
-func getQueue(query rc.Queries) <- chan Recode {
+func getQueue(query mq.Queries) <- chan Recode {
     ctx := context.Background()
     rows, err := query.GetQueue(ctx)
-    logErr(err)
+    cmd.LogErr(err)
 
     out := make(chan Recode)
 
@@ -40,10 +61,10 @@ func getQueue(query rc.Queries) <- chan Recode {
     return out
 }
 
-func getRoot(query rc.Queries) <- chan string {
+func getRoot(query mq.Queries) <- chan string {
     ctx := context.Background()
     rootdir, err := query.GetPrefs(ctx)
-    logErr(err)
+    cmd.LogErr(err)
 
     out := make(chan string)
 
@@ -60,18 +81,18 @@ func getRoot(query rc.Queries) <- chan string {
 
 func handleIndex() http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
-        http.ServeFile(w, r, "../src/client/index.html")
+        http.ServeFile(w, r, "../../web/ui/index.html")
     }
 }
 
-func handleNewEpisode(query rc.Queries, rootdir *string, mtx *sync.RWMutex) http.HandlerFunc {
+func handleNewEpisode(query mq.Queries, rootdir *string, mtx *sync.RWMutex) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
         destination := r.PostFormValue("newepisode")
         episode := r.PostFormValue("episode")
         season := r.PostFormValue("season")
         _, video, err := r.FormFile("video")
 
-        logErr(err)
+        cmd.LogErr(err)
 
         recode := Recode{ Season: season , Episode: episode }
 
@@ -86,14 +107,14 @@ func handleNewEpisode(query rc.Queries, rootdir *string, mtx *sync.RWMutex) http
 
         ctx := context.Background()
 
-        err = query.CreateRecode(ctx, rc.CreateRecodeParams{
+        err = query.CreateRecode(ctx, mq.CreateRecodeParams{
             Season: season, 
             Episode: episode,
             Dest: dest,
             Origin: origin,
         })
 
-        logErr(err)
+        cmd.LogErr(err)
 
         fmt.Fprintf(w, fmt.Sprintf("%v %v %v %v", destination, recode.getEpisode(), video.Filename, recode.getSeason()), nil)
 
@@ -104,7 +125,7 @@ func handleAnime() http.HandlerFunc {
     return func(w http.ResponseWriter, _ *http.Request) {
         dir := "/Volumes/media/Anime TV"
         entries, err := os.ReadDir(dir)
-        logErr(err)
+        cmd.LogErr(err)
 
         list := make([]Anime, len(entries))
 
@@ -115,13 +136,13 @@ func handleAnime() http.HandlerFunc {
         }
 
         data, err := json.Marshal(list)
-        printErr(err)
+        cmd.PrintErr(err)
         w.Header().Set("Content-Type", "application/json")        
         w.Write(data)
     }
 }
 
-func handleQueue(query rc.Queries) http.HandlerFunc {
+func handleQueue(query mq.Queries) http.HandlerFunc {
     return func(w http.ResponseWriter, _ *http.Request) {
         recodes := getQueue(query)
         list := []Recode{} 
@@ -131,14 +152,14 @@ func handleQueue(query rc.Queries) http.HandlerFunc {
         }
 
         data, err := json.Marshal(list)
-        logErr(err)
+        cmd.LogErr(err)
 
         w.Header().Set("Content-Type", "application/json")
         w.Write(data)
     }
 }
 
-func handleRootDir(logger *log.Logger, query rc.Queries, rootdir *string, mtx *sync.RWMutex) http.HandlerFunc {
+func handleRootDir(logger *log.Logger, query mq.Queries, rootdir *string, mtx *sync.RWMutex) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
         dir := r.PostFormValue("rootdirectory")
 
@@ -158,9 +179,9 @@ func handleRootDir(logger *log.Logger, query rc.Queries, rootdir *string, mtx *s
 
         if dir != "" {
             ctx := context.Background()
-            err := query.UpdatePref(ctx, rc.UpdatePrefParams{ Rootdir: sql.NullString{ String: dir, Valid: true } })
+            err := query.UpdatePref(ctx, mq.UpdatePrefParams{ Rootdir: sql.NullString{ String: dir, Valid: true } })
 
-            logErr(err)
+            cmd.LogErr(err)
 
             mtx.Lock()
             *rootdir = dir

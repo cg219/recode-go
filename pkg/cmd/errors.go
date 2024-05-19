@@ -1,14 +1,14 @@
-package main
+package cmd
 
 import "log"
 
-func printErr(err error) {
+func PrintErr(err error) {
     if err != nil {
         panic(err)
     }
 }
 
-func logErr(err error) {
+func LogErr(err error) {
     if err != nil {
         log.Fatal(err)
     }

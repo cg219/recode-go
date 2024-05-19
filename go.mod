@@ -1,4 +1,4 @@
-module mentegee/recode/gui
+module mentegee/recode
 
 go 1.22.0
 

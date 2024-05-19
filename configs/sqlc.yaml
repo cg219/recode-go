@@ -1,0 +1,9 @@
+version: "2"
+sql:
+  - engine: "sqlite"
+    queries: "../db/queries.sql"
+    schema: "../cmd/recode/schema.sql"
+    gen:
+      go:
+        package: mq
+        out: ../pkg/mq
