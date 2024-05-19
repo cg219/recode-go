@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	_ "embed"
+	"fmt"
 	"log"
 	"mentegee/recode/pkg/mq"
 	"net/http"
@@ -13,18 +14,22 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func (r *Recode) getEpisode() string {
+func (r *Recode) GetEpisode() string {
     count  := 1 + ((3-len(r.Episode)) / len("0"))
     str := strings.Repeat("0", count) + r.Episode
 
     return str[len(str) - 3:]
 }
 
-func (r *Recode) getSeason() string {
+func (r *Recode) GetSeason() string {
     count  := 1 + ((2-len(r.Season)) / len("0"))
     str := strings.Repeat("0", count) + r.Season
 
     return str[len(str) - 2:]
+}
+
+func (r *Recode) Encode() {
+    fmt.Printf("Encoding... %s \n", r.Destination)
 }
 
 func NewServer(db *sql.DB) *server {

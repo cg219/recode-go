@@ -102,7 +102,7 @@ func handleNewEpisode(query mq.Queries, rootdir *string, mtx *sync.RWMutex) http
 
         splitText := strings.Split(destination, "/")
         destName := splitText[len(splitText) - 1]
-        dest := fmt.Sprintf("%v/%v - s%ve%v.mkv", destination, destName, recode.getSeason(), recode.getEpisode())
+        dest := fmt.Sprintf("%v/%v - s%ve%v.mkv", destination, destName, recode.GetSeason(), recode.GetEpisode())
         origin := fmt.Sprintf("%v/%v", rootdirValue, video.Filename)
 
         ctx := context.Background()
@@ -116,7 +116,7 @@ func handleNewEpisode(query mq.Queries, rootdir *string, mtx *sync.RWMutex) http
 
         cmd.LogErr(err)
 
-        fmt.Fprintf(w, fmt.Sprintf("%v %v %v %v", destination, recode.getEpisode(), video.Filename, recode.getSeason()), nil)
+        fmt.Fprintf(w, fmt.Sprintf("%v %v %v %v", destination, recode.GetEpisode(), video.Filename, recode.GetSeason()), nil)
 
     }
 }
@@ -149,6 +149,7 @@ func handleQueue(query mq.Queries) http.HandlerFunc {
 
         for recode := range recodes {
             list = append(list, recode)
+            recode.Encode()
         }
 
         data, err := json.Marshal(list)
