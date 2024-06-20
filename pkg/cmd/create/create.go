@@ -37,7 +37,6 @@ func newModel(options []string) model {
 
     return model{
         options: options,
-        selected: make(map[int]string),
         list: list.New(items, list.NewDefaultDelegate(), 0, 0),
     }
 }
@@ -63,24 +62,6 @@ func(m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
     m.list, cmd = m.list.Update(msg)
     return m, cmd
 }
-
-// func optionsEnum(m model) func(*List, int) string {
-//     return func (l *list.List, i int) string {
-//         cursor := " "
-//
-//         if m.cursor == i {
-//             cursor = ">"
-//         }
-//
-//         marked := " "
-//         if _, ok := m.selected[i]; ok {
-//             marked = "x"
-//         }
-//
-//         return fmt.Sprintf("%s [%s] %s\n", cursor, marked, l.At(i))
-//
-//     }
-// }
 
 func (m model) View() string {
     return m.list.View()
