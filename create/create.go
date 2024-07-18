@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -31,6 +31,7 @@ type model struct {
     options []string
     selected map[string]struct{}
     list list.Model
+    title textinput.Model
     keys KeyMap
     itemStyle struct {
         normal lipgloss.Style
@@ -38,6 +39,11 @@ type model struct {
         selected lipgloss.Style
         selectedactive lipgloss.Style
     }
+}
+
+type recodeinfo struct {
+    To string
+    From string
 }
 
 type item struct {
@@ -132,6 +138,7 @@ func newModel(options []string) model {
         Foreground(lipgloss.Color("#FCFCFC")).
         PaddingLeft(4)
 
+
     list := list.New(items, itemDelegate{struct{normal lipgloss.Style; active lipgloss.Style; selected lipgloss.Style; selectedactive lipgloss.Style} {
         selected: selected,
         selectedactive: selectedactive,
@@ -144,9 +151,20 @@ func newModel(options []string) model {
     list.SetFilteringEnabled(false)
     list.SetShowHelp(true)
 
+    ti := textinput.New()
+    ti.Placeholder = "Show Title"
+    ti.Width = 20
+    ti.CharLimit = 200
+    ti.PlaceholderStyle = lipgloss.NewStyle().
+        Foreground(lipgloss.Color("#CCCCCC"))
+    ti.PromptStyle = lipgloss.NewStyle().
+        Border(lipgloss.RoundedBorder()).
+        BorderForeground(lipgloss.Color("#EF0038"))
+
     return model{
         options: options,
         list: list,
+        title: ti,
         selected: make(map[string]struct{}),
         itemStyle: struct{normal lipgloss.Style; active lipgloss.Style; selected lipgloss.Style; selectedactive lipgloss.Style} {
             normal: normal,
@@ -200,8 +218,7 @@ func(m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
                 } 
             }
         case key.Matches(msg, m.keys.Start):
-            log.Print(m.selected)
-            return m, tea.Quit
+            m.title.Focus()
         }
     case tea.WindowSizeMsg:
         h,v := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
@@ -210,11 +227,20 @@ func(m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
     var cmd tea.Cmd
 
-    m.list, cmd = m.list.Update(msg)
+    if m.title.Focused() {
+        m.title, cmd = m.title.Update(msg)
+    } else {
+        m.list, cmd = m.list.Update(msg)
+    }
+
     return m, cmd
 }
 
 func (m model) View() string {
+    if m.title.Focused() {
+        return m.title.View()
+    }
+
     return m.list.View()
 }
 

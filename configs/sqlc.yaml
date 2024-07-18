@@ -2,8 +2,8 @@ version: "2"
 sql:
   - engine: "sqlite"
     queries: "../db/queries.sql"
-    schema: "../cmd/recode/schema.sql"
+    schema: "../configs/schema.sql"
     gen:
       go:
         package: mq
-        out: ../pkg/mq
+        out: ../internal/mq
