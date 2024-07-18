@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"mentegee/recode/pkg/cmd"
+	"mentegee/recode/internal/cmd"
 	"mentegee/recode/pkg/mq"
 	"net/http"
 	"os"
