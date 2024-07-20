@@ -2,63 +2,101 @@ package recode
 
 import (
 	"context"
-	"database/sql"
-	_ "embed"
-	"fmt"
 	"log"
-	"mentegee/recode/pkg/mq"
-	"net/http"
-	"strings"
+	"os"
 	"sync"
 
-	_ "modernc.org/sqlite"
+	"github.com/xfrr/goffmpeg/v2/ffmpeg"
 )
 
-func (r *Recode) GetEpisode() string {
-    count  := 1 + ((3-len(r.Episode)) / len("0"))
-    str := strings.Repeat("0", count) + r.Episode
+func Encode(in string, out string) error {
+    _, err := os.Create("/dev/null")
 
-    return str[len(str) - 3:]
-}
-
-func (r *Recode) GetSeason() string {
-    count  := 1 + ((2-len(r.Season)) / len("0"))
-    str := strings.Repeat("0", count) + r.Season
-
-    return str[len(str) - 2:]
-}
-
-func (r *Recode) Encode() {
-    fmt.Printf("Encoding... %s \n", r.Destination)
-}
-
-func NewServer(db *sql.DB) *server {
-    q := mq.New(db)
-
-    return &server{
-        queries: q,
-        mux: http.NewServeMux(),
-        logger: log.Default(),
-        mtx: &sync.RWMutex{},
-    }
-}
-
-func Run(schema string, dbpath string) error {
-    ctx := context.Background()
-    db, err := sql.Open("sqlite", dbpath)
     if err != nil {
         return err
     }
-    defer db.Close()
 
-    if _, err := db.ExecContext(ctx, schema); err != nil {
-        return err
+    var wg sync.WaitGroup
+
+    ch1 := make(chan bool)
+    ch2 := make(chan bool)
+    defer close(ch1)
+    defer close(ch2)
+
+    c1 := ffmpeg.NewCommand().
+        WithInputPath(in).
+        WithPass(1).
+        WithPassLogFile("fil.log").
+        WithOutputFormat("null").
+        WithVideoCodec("libx265").
+        WithVideoBitrate("1200k").
+        WithThreadAmount(16).
+        WithOutputPath("/dev/null")
+
+    c2 := ffmpeg.NewCommand().
+        WithInputPath(in).
+        WithPass(2).
+        WithPassLogFile("fil.log").
+        WithMap("0").
+        WithVideoCodec("libx265").
+        WithVideoBitrate("1200k").
+        WithAudioCodec("aac").
+        WithAudioBitrate("128K").
+        WithSubtitleCodec("copy").
+        WithThreadAmount(16).
+        WithOutputPath(out)
+
+    go pass(c1, ch1, ch2, &wg)
+    go pass(c2, ch2, nil, &wg)
+
+    ch1 <- true
+
+    wg.Wait()
+
+    os.Remove("fil.log")
+
+    return nil
+}
+
+func pass (c *ffmpeg.Command, start <-chan bool, stop chan<- bool, wg *sync.WaitGroup) {
+    wg.Add(1)
+
+    log.Println("Added")
+    ctx := context.Background()
+    ctx, cancel1 := context.WithCancel(ctx)
+    defer cancel1()
+
+    go func() {
+        log.Println("Starting")
+        log.Println(c)
+
+        <-start
+
+        p, err := c.Start(ctx)
+
+        if err != nil {
+            panic(err)
+        }
+
+        go func() {
+            for msg := range p {
+                log.Printf("%2.f", msg.Duration().Seconds())
+            }
+        }()
+
+    }()
+
+    err := c.Wait()
+
+    if err != nil {
+        panic(err)
     }
 
-    srv := NewServer(db)
+    wg.Done()
 
-    addRoutes(srv)
+    if stop != nil {
+        stop <-true
+    }
 
-    http.ListenAndServe(":3000", srv.mux)
-    return nil
+    log.Println("Done")
 }
