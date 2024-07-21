@@ -10,6 +10,8 @@ import (
 
 	//    "mentegee/recode/create"
 	"log"
+
+	_ "modernc.org/sqlite"
 	// "gopkg.in/yaml.v3"
 )
 
@@ -30,7 +32,6 @@ func main () {
         cmd.LogErr(err)
     }
 
-    log.Println("HERERERRE")
     os.Exit(0)
 }
 
@@ -46,7 +47,7 @@ func runRecode(schema string, dbpath string) error {
         return err
     }
 
-    err = recode.Encode("test/test1.mkv", "test/test2.mkv")
+    err = recode.Encode("test/test1.mp4", "test/test2.mkv")
     
     if err != nil {
         return err
