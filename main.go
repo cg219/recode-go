@@ -132,7 +132,7 @@ func newModel() recodeModel {
         PaddingBottom(2)
         
     return recodeModel{
-        progress: progress.New(progress.WithScaledGradient("#EF0038", "#FC2351")),
+        progress: progress.New(progress.WithScaledGradient("#0f8a7f", "#0979ad")),
         channel: make(chan float64, 1),
         helpStyle: helpStyle,
         titleStyle: titleStyle,
