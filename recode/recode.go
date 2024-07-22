@@ -2,7 +2,6 @@ package recode
 
 import (
     "context"
-    "log"
     "os"
 
     "github.com/xfrr/goffmpeg/v2/ffmpeg"
@@ -21,7 +20,7 @@ type passdata struct {
     fileInfo media.File
 }
 
-func Encode(in string, out string) error {
+func Encode(in string, out string, progress chan float64) error {
     _, err := os.Create("/dev/null")
 
     if err != nil {
@@ -54,7 +53,7 @@ func Encode(in string, out string) error {
         WithThreadAmount(16).
         WithOutputPath(out)
 
-    pd, err := newPassData(c1, c2, ch1, ch2, in)
+    pd, err := newPassData(c1, c2, ch1, ch2, in, progress)
 
     if err != nil {
         return err
@@ -65,19 +64,13 @@ func Encode(in string, out string) error {
 
     ch1 <- true
 
-    for {
-        select {
-        case progress := <-pd.progressChannel:
-            log.Printf("Progress: %.2f\n", progress)
-        case <-pd.doneChannel:
-            os.Remove("fil.log")
-            return nil
-    }
-    }
+    <-pd.doneChannel
+
+    os.Remove("fil.log")
+    return nil
 }
 
-func newPassData(firstPass, secondPass *ffmpeg.Command, ch1, ch2 chan bool, inputPath string) (*passdata, error) {
-    p := make(chan float64)
+func newPassData(firstPass, secondPass *ffmpeg.Command, ch1, ch2 chan bool, inputPath string, p chan float64) (*passdata, error) {
     d := make(chan struct{})
 
     ctx := context.Background()
@@ -145,10 +138,12 @@ func pass (d *passdata, command *ffmpeg.Command) {
                     return
                 default:
                     for msg := range p {
+                        n := float64(msg.Duration().Milliseconds()) / (float64(d.fileInfo.Duration().Milliseconds()) * 2) 
+
                         if !isSecondPass {
-                            d.progressChannel <-float64(msg.Duration().Milliseconds()) / (float64(d.fileInfo.Duration().Milliseconds()) * 2) * 100
+                            d.progressChannel <-n
                         } else {
-                            d.progressChannel <-float64(msg.Duration().Milliseconds()) / (float64(d.fileInfo.Duration().Milliseconds()) * 2) * 100 + 50.0
+                            d.progressChannel <-n + 0.50
                         }
 
                     }
