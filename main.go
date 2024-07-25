@@ -1,3 +1,7 @@
+// TODO:
+// - Update Dest Tinput Styles
+// - Setup Tab to toggle between File picker and Text Input on step 2
+// - Update recode to use the selected file and destination
 package main
 
 import (
@@ -7,11 +11,14 @@ import (
 	"mentegee/recode/internal/cmd"
 	"mentegee/recode/recode"
 	"os"
+	"path/filepath"
 	"time"
 
 	//    "mentegee/recode/create"
 
+	"github.com/charmbracelet/bubbles/filepicker"
 	"github.com/charmbracelet/bubbles/progress"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	_ "modernc.org/sqlite"
@@ -23,6 +30,12 @@ var ddl string
 
 // // go:embed configs/config.yml
 // var config string
+
+const (
+    chooseFile state = 1
+    chooseDest state = 2
+    recodeStep state = 3
+)
 
 func main () {
     // var cfg create.Config
@@ -42,19 +55,34 @@ type progressMsg float64
 type recodeMsg bool
 type errMsg struct{ err error }
 type tickMsg time.Time
+type state int
 
 type recodeModel struct {
     progress progress.Model
+    filepicker filepicker.Model
     lastPercent float64
     percent float64
     channel chan float64
     titleStyle lipgloss.Style
     helpStyle lipgloss.Style
+    state state
+    srcFile string
+    destFile string
+    destFileDir string
+    destFileInput textinput.Model
 }
 
 func (m recodeModel) Init() tea.Cmd {
-    go encode(m)
-    return tick()
+    if m.state == chooseFile {
+        return m.filepicker.Init()
+    }
+
+    if m.state == recodeStep {
+        go encode(m)
+        return tick()
+    }
+
+    return nil
 }
 
 func (m recodeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -62,14 +90,29 @@ func (m recodeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
     case tea.KeyMsg:
         k := msg.String()
 
-        if k == "q" || k == "ctrl+c" {
+        if k == "q" && !m.destFileInput.Focused() {
             return m, tea.Quit
         }
 
-        return m, nil
+        if k == "ctrl+c" {
+            return m, tea.Quit
+        }
 
     case tea.WindowSizeMsg:
-        m.progress.Width = msg.Width - 8 - 4
+        if m.state == chooseFile {
+            m.filepicker.Height = 10
+
+            return m, nil
+        }
+
+        if m.state == chooseDest {
+            m.filepicker.Height = 10
+            m.destFileInput.Width = msg.Width - 12
+
+            return m, nil
+        }
+
+        m.progress.Width = msg.Width - 12
 
         if m.progress.Width > 120 {
             m.progress.Width = 120
@@ -78,32 +121,61 @@ func (m recodeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         return m, nil
 
     case tickMsg:
-        p, ok := <-m.channel
+        if m.state == recodeStep {
+            p, ok := <-m.channel
 
-        if ok {
-            if p < m.lastPercent {
-                return m, tea.Quit
+            if ok {
+                if p < m.lastPercent {
+                    return m, tea.Quit
+                }
+
+                m.lastPercent = m.percent
+                m.percent = p
+
+                if m.percent > 1.0 {
+                    m.percent = 1.0
+                    return m, tea.Quit
+                }
+
+                return m, tick()
             }
 
-            m.lastPercent = m.percent
-            m.percent = p
-
-            if m.percent > 1.0 {
-                m.percent = 1.0
-                return m, tea.Quit
-            }
-
-            return m, tick()
+            return m, tea.Quit
         }
 
-        return m, tea.Quit
     case errMsg:
         return m, tea.Quit
     case recodeMsg:
         return m, tea.Quit
-    default:
-        return m, nil
 } 
+    var cmd tea.Cmd
+
+    if m.state == chooseFile {
+        m.filepicker, cmd = m.filepicker.Update(msg)
+
+        if didSelect, path := m.filepicker.DidSelectFile(msg); didSelect {
+            m.srcFile = path
+            m.state = chooseDest
+            setDestFp(&m.filepicker)
+        }
+    }
+
+    if m.state == chooseDest {
+        if m.destFileInput.Focused() {
+            m.destFileInput, cmd = m.destFileInput.Update(msg)
+
+            m.destFile = filepath.Join(m.destFileDir, m.destFileInput.Value())
+        } else {
+            m.filepicker, cmd = m.filepicker.Update(msg)
+
+            if didSelect, path := m.filepicker.DidSelectFile(msg); didSelect {
+                m.destFileDir = path
+                m.destFile = filepath.Join(path, m.destFileInput.Value())
+            }
+        }
+    }
+
+    return m, cmd
 }
 
 func (m recodeModel) View() string {
@@ -112,11 +184,35 @@ func (m recodeModel) View() string {
         m.progress.ViewAs(m.percent),
         m.helpStyle.Render("q/ctrl+c : quit"))
 
-    return lipgloss.NewStyle().
-        PaddingLeft(5).
-        PaddingTop(2).
-        PaddingBottom(2).
-        Render(comp)
+    switch m.state {
+    case chooseFile:
+        return m.filepicker.View()
+
+    case chooseDest:
+        return lipgloss.JoinVertical(lipgloss.Left,
+            m.filepicker.View(),
+            m.destFileInput.View())
+
+    default:
+        return lipgloss.NewStyle().
+            PaddingLeft(5).
+            PaddingTop(2).
+            PaddingBottom(2).
+            Render(comp)
+}
+
+}
+
+func setSrcFp(fp *filepicker.Model) {
+    fp.AllowedTypes = []string{".mp4", ".mkv", ".mov", ".mpg", ".mpeg"}
+    fp.DirAllowed = false
+    fp.FileAllowed = true
+}
+
+func setDestFp(fp *filepicker.Model) {
+    fp.AllowedTypes = []string{"*"}
+    fp.DirAllowed = true
+    fp.FileAllowed = false
 }
 
 func newModel() recodeModel {
@@ -130,12 +226,35 @@ func newModel() recodeModel {
         Bold(true).
         BorderBottom(true).
         PaddingBottom(2)
+
+    destStyle := lipgloss.NewStyle().
+        Background(lipgloss.Color("#555555")).
+        Border(lipgloss.BlockBorder(), true).
+        Foreground(lipgloss.Color("#EFEFEF")).
+        Padding(2)
+    
+    dir, err := os.Getwd()
+
+    if err != nil {
+        panic(err)
+    }
+
+    fp := filepicker.New()
+    fp.CurrentDirectory = dir
+    setSrcFp(&fp)
+
+    ti := textinput.New()
+    ti.Placeholder = "Output Filename"
+    ti.TextStyle = destStyle
         
     return recodeModel{
+        filepicker: fp,
         progress: progress.New(progress.WithScaledGradient("#0f8a7f", "#0979ad")),
         channel: make(chan float64, 1),
         helpStyle: helpStyle,
         titleStyle: titleStyle,
+        state: chooseFile,
+        destFileInput: ti,
     }
 } 
 
@@ -172,18 +291,6 @@ func runRecode(schema string, dbpath string) error {
     if _, err := db.ExecContext(ctx, schema); err != nil {
         return err
     }
-
-    // progressChannel := make(chan float64)
-    //
-    // go func() {
-    //     for p := range progressChannel {
-    //         fmt.Println(p)
-    //     }
-    // }()
-    //
-    // if err := recode.Encode("test/test1.mp4", "test/test2.mkv", progressChannel); err != nil {
-    //     return err
-    // }
 
     if _, err:= tea.NewProgram(newModel()).Run(); err != nil {
         return err

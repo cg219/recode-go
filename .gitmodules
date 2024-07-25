@@ -1,0 +1,3 @@
+[submodule "goffmpeg"]
+	path = goffmpeg
+	url = git@github.com:cg219/goffmpeg.git
