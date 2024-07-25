@@ -1,13 +1,14 @@
 package recode
 
 import (
-    "context"
-    "os"
+	"context"
+	"os"
+	"path/filepath"
 
-    "github.com/xfrr/goffmpeg/v2/ffmpeg"
-    "github.com/xfrr/goffmpeg/v2/ffmpeg/progress"
-    "github.com/xfrr/goffmpeg/v2/ffprobe"
-    "github.com/xfrr/goffmpeg/v2/pkg/media"
+	"github.com/xfrr/goffmpeg/v2/ffmpeg"
+	"github.com/xfrr/goffmpeg/v2/ffmpeg/progress"
+	"github.com/xfrr/goffmpeg/v2/ffprobe"
+	"github.com/xfrr/goffmpeg/v2/pkg/media"
 )
 
 type passdata struct {
@@ -27,13 +28,21 @@ func Encode(in string, out string, progress chan float64) error {
         return err
     }
 
+    temp, err := os.MkdirTemp("", "passes")
+
+    if err != nil {
+        panic(err)
+    }
+
+    defer os.RemoveAll(temp)
+
     ch1 := make(chan bool)
     ch2 := make(chan bool)
 
     c1 := ffmpeg.NewCommand().
         WithInputPath(in).
         WithPass(1).
-        WithPassLogFile("fil.log").
+        WithPassLogFile(filepath.Join(temp, "pass")).
         WithOutputFormat("null").
         WithVideoCodec("libx265").
         WithVideoBitrate("1200k").
@@ -43,7 +52,7 @@ func Encode(in string, out string, progress chan float64) error {
     c2 := ffmpeg.NewCommand().
         WithInputPath(in).
         WithPass(2).
-        WithPassLogFile("fil.log").
+        WithPassLogFile(filepath.Join(temp, "pass")).
         WithMap("0").
         WithVideoCodec("libx265").
         WithVideoBitrate("1200k").
@@ -66,7 +75,6 @@ func Encode(in string, out string, progress chan float64) error {
 
     <-pd.doneChannel
 
-    os.Remove("fil.log")
     return nil
 }
 
