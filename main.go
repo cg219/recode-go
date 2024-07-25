@@ -1,13 +1,13 @@
 // TODO:
 // - Update Dest Tinput Styles
-// - Setup Tab to toggle between File picker and Text Input on step 2
-// - Update recode to use the selected file and destination
+// - Update Filepicker to go up directories on step 2
 package main
 
 import (
 	"context"
 	"database/sql"
 	_ "embed"
+	"fmt"
 	"mentegee/recode/internal/cmd"
 	"mentegee/recode/recode"
 	"os"
@@ -77,11 +77,6 @@ func (m recodeModel) Init() tea.Cmd {
         return m.filepicker.Init()
     }
 
-    if m.state == recodeStep {
-        go encode(m)
-        return tick()
-    }
-
     return nil
 }
 
@@ -96,6 +91,23 @@ func (m recodeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
         if k == "ctrl+c" {
             return m, tea.Quit
+        }
+
+        if k == "tab" && m.state == chooseDest {
+            if m.destFileInput.Focused() {
+                m.destFileInput.Blur()
+            } else {
+                m.destFileDir = m.filepicker.CurrentDirectory
+                m.destFile = filepath.Join(m.destFileDir, m.destFileInput.Value())
+                m.destFileInput.Focus()
+            }
+
+            return m, nil
+        }
+
+        if k == "enter" && m.destFileInput.Focused() && m.state == chooseDest {
+            m.state = recodeStep
+            return m, startEncode(m)
         }
 
     case tea.WindowSizeMsg:
@@ -165,13 +177,6 @@ func (m recodeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
             m.destFileInput, cmd = m.destFileInput.Update(msg)
 
             m.destFile = filepath.Join(m.destFileDir, m.destFileInput.Value())
-        } else {
-            m.filepicker, cmd = m.filepicker.Update(msg)
-
-            if didSelect, path := m.filepicker.DidSelectFile(msg); didSelect {
-                m.destFileDir = path
-                m.destFile = filepath.Join(path, m.destFileInput.Value())
-            }
         }
     }
 
@@ -180,7 +185,7 @@ func (m recodeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m recodeModel) View() string {
     comp := lipgloss.JoinVertical(lipgloss.Left,
-        m.titleStyle.Render("Recoding: test1.mp4"),
+        m.titleStyle.Render(fmt.Sprintf("Recoding: %s to %s", m.srcFile, m.destFile)),
         m.progress.ViewAs(m.percent),
         m.helpStyle.Render("q/ctrl+c : quit"))
 
@@ -271,13 +276,20 @@ func encode(m recodeModel) {
         }
     }()
 
-    err := recode.Encode("test/test1.mp4", "test/test2.mkv", m.channel)
+    err := recode.Encode(m.srcFile, m.destFile, m.channel)
 
     if err != nil {
         panic(err)
     }
 
     m.Update(recodeMsg(true))
+}
+
+func startEncode(m recodeModel) tea.Cmd {
+    return func() tea.Msg {
+        go encode(m)
+        return tickMsg{}
+    }
 }
 
 func runRecode(schema string, dbpath string) error {
