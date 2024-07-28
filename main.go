@@ -11,7 +11,6 @@ import (
 	"mentegee/recode/internal/cmd"
 	"mentegee/recode/recode"
 	"os"
-	"path/filepath"
 	"time"
 
 	//    "mentegee/recode/create"
@@ -68,7 +67,6 @@ type recodeModel struct {
     state state
     srcFile string
     destFile string
-    destFileDir string
     destFileInput textinput.Model
 }
 
@@ -91,18 +89,6 @@ func (m recodeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
         if k == "ctrl+c" {
             return m, tea.Quit
-        }
-
-        if k == "tab" && m.state == chooseDest {
-            if m.destFileInput.Focused() {
-                m.destFileInput.Blur()
-            } else {
-                m.destFileDir = m.filepicker.CurrentDirectory
-                m.destFile = filepath.Join(m.destFileDir, m.destFileInput.Value())
-                m.destFileInput.Focus()
-            }
-
-            return m, nil
         }
 
         if k == "enter" && m.destFileInput.Focused() && m.state == chooseDest {
@@ -167,16 +153,17 @@ func (m recodeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
         if didSelect, path := m.filepicker.DidSelectFile(msg); didSelect {
             m.srcFile = path
+            m.destFile = path
+            m.destFileInput.SetValue(path)
             m.state = chooseDest
-            setDestFp(&m.filepicker)
+            return m, m.destFileInput.Focus()
         }
     }
 
     if m.state == chooseDest {
         if m.destFileInput.Focused() {
             m.destFileInput, cmd = m.destFileInput.Update(msg)
-
-            m.destFile = filepath.Join(m.destFileDir, m.destFileInput.Value())
+            m.destFile = m.destFileInput.Value()
         }
     }
 
